@@ -1,0 +1,54 @@
+method: bayes
+metric:
+  goal: minimize
+  name: val_mae
+gnn_type: GNN
+parameters:
+  conv_layer:
+    values:
+      - GPSAttnRes
+  gps_attn_type:
+    values:
+      - multihead
+  num_layers:
+    values:
+      - 15
+      - 17
+      - 19
+  hidden_dim:
+    values:
+      - 160
+      - 162
+      - 192
+  batch_size:
+    values:
+      - 256
+  lr:
+    distribution: loguniform
+    min: 0.00017
+    max: 0.00050
+  weight_decay:
+    distribution: loguniform
+    min: 0.00003
+    max: 0.00015
+  dropout_prob:
+    values:
+      - 0.0
+      - 0.05
+  gps_num_heads:
+    values:
+      - 2
+  gps_attn_dropout:
+    values:
+      - 0.0
+      - 0.05
+      - 0.1
+  attnres_history_stride:
+    values:
+      - 2
+      - 4
+initial_points:
+  - {num_layers: 17, hidden_dim: 162, batch_size: 256, lr: 0.00034, weight_decay: 0.00007, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.0, attnres_history_stride: 2}
+  - {num_layers: 17, hidden_dim: 162, batch_size: 256, lr: 0.00034, weight_decay: 0.00007, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.0, attnres_history_stride: 4}
+  - {num_layers: 19, hidden_dim: 162, batch_size: 256, lr: 0.00034, weight_decay: 0.00007, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.05, attnres_history_stride: 2}
+  - {num_layers: 19, hidden_dim: 162, batch_size: 256, lr: 0.00034, weight_decay: 0.00007, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.05, attnres_history_stride: 4}

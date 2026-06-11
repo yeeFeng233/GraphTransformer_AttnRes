@@ -1,0 +1,10 @@
+data/
+checkpoints/
+logs/
+ray_tmp/
+ray_results/
+results/
+.git/
+.venv/
+__pycache__/
+.vscode/

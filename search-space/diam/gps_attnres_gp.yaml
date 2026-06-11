@@ -1,0 +1,68 @@
+method: bayes
+metric:
+  goal: minimize
+  name: val_mae
+gnn_type: GNN
+parameters:
+  conv_layer:
+    values:
+      - GPSAttnRes
+  gps_attn_type:
+    values:
+      - multihead
+  num_layers:
+    values:
+      - 17
+      - 19
+      - 21
+      - 23
+      - 25
+      - 27
+      - 29
+  hidden_dim:
+    values:
+      - 40
+      - 64
+      - 80
+      - 96
+      - 128
+      - 160
+  batch_size:
+    values:
+      - 256
+  lr:
+    distribution: loguniform
+    min: 0.000008
+    max: 0.00008
+  weight_decay:
+    distribution: loguniform
+    min: 0.00005
+    max: 0.00020
+  dropout_prob:
+    values:
+      - 0.0
+  gps_num_heads:
+    values:
+      - 2
+      - 4
+      - 8
+  gps_attn_dropout:
+    values:
+      - 0.03
+      - 0.05
+      - 0.08
+  attnres_history_stride:
+    values:
+      - 2
+      - 4
+      - 6
+      - 8
+initial_points:
+  - {num_layers: 17, hidden_dim: 40, batch_size: 256, lr: 0.00004, weight_decay: 0.00015, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.05, attnres_history_stride: 2}
+  - {num_layers: 19, hidden_dim: 64, batch_size: 256, lr: 0.00004, weight_decay: 0.00015, dropout_prob: 0.0, gps_num_heads: 2, gps_attn_dropout: 0.05, attnres_history_stride: 2}
+  - {num_layers: 25, hidden_dim: 96, batch_size: 256, lr: 0.00002, weight_decay: 0.00010, dropout_prob: 0.0, gps_num_heads: 4, gps_attn_dropout: 0.05, attnres_history_stride: 6}
+  - {num_layers: 25, hidden_dim: 128, batch_size: 256, lr: 0.000018, weight_decay: 0.00010, dropout_prob: 0.0, gps_num_heads: 4, gps_attn_dropout: 0.05, attnres_history_stride: 6}
+  - {num_layers: 27, hidden_dim: 128, batch_size: 256, lr: 0.000015, weight_decay: 0.00008, dropout_prob: 0.0, gps_num_heads: 8, gps_attn_dropout: 0.05, attnres_history_stride: 6}
+  - {num_layers: 29, hidden_dim: 160, batch_size: 256, lr: 0.000012, weight_decay: 0.00008, dropout_prob: 0.0, gps_num_heads: 8, gps_attn_dropout: 0.05, attnres_history_stride: 8}
+  - {num_layers: 23, hidden_dim: 96, batch_size: 256, lr: 0.000025, weight_decay: 0.00012, dropout_prob: 0.0, gps_num_heads: 4, gps_attn_dropout: 0.03, attnres_history_stride: 6}
+  - {num_layers: 27, hidden_dim: 96, batch_size: 256, lr: 0.00002, weight_decay: 0.00015, dropout_prob: 0.0, gps_num_heads: 4, gps_attn_dropout: 0.08, attnres_history_stride: 4}

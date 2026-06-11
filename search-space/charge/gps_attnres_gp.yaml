@@ -1,0 +1,54 @@
+method: bayes
+metric:
+  goal: minimize
+  name: val_loss
+gnn_type: GNN
+parameters:
+  conv_layer:
+    values:
+      - GPSAttnRes
+  gps_attn_type:
+    values:
+      - multihead
+  num_layers:
+    values:
+      - 24
+      - 28
+      - 32
+      - 36
+  hidden_dim:
+    values:
+      - 128
+      - 160
+      - 192
+      - 224
+  batch_size:
+    values:
+      - 256
+  lr:
+    distribution: loguniform
+    min: 0.00003
+    max: 0.00012
+  weight_decay:
+    distribution: loguniform
+    min: 0.00002
+    max: 0.0004
+  dropout_prob:
+    values:
+      - 0.0
+      - 0.05
+      - 0.1
+  gps_num_heads:
+    values:
+      - 4
+      - 8
+  gps_attn_dropout:
+    values:
+      - 0.05
+      - 0.1
+      - 0.15
+      - 0.2
+  attnres_history_stride:
+    values:
+      - 2
+      - 4

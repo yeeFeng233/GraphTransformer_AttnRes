@@ -1,0 +1,6 @@
+wandb
+tqdm
+matplotlib
+lightning
+torchdyn
+ray
