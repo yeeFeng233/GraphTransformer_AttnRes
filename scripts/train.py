@@ -4,7 +4,9 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
+import json
 import re
+from pathlib import Path
 
 import lightning as L
 import torch
@@ -18,6 +20,19 @@ from utils.litmodels import LitGraphNN
 parser = argparse.ArgumentParser()
 parser.add_argument("--task", type=str, help="Task to run: [sssp, ecc, diam, charge, energy]")
 parser.add_argument("--device", type=str, default="gpu", help="Device to use for training")
+parser.add_argument("--seed", type=int, default=5, help="Random seed")
+parser.add_argument(
+    "--monitor_metric",
+    type=str,
+    default="val_mae",
+    choices=["val_loss", "val_mae"],
+    help="Metric used for checkpointing and early stopping",
+)
+parser.add_argument("--max_epochs", type=int, default=1000, help="Maximum number of training epochs")
+parser.add_argument("--early_stopping_patience", type=int, default=100)
+parser.add_argument("--num_workers", type=int, default=8)
+parser.add_argument("--deterministic", action="store_true")
+parser.add_argument("--result_json", type=str, help="Optional path for metrics and config JSON")
 
 # general gnn parameters
 parser.add_argument("--conv_layer", type=str)
@@ -33,6 +48,7 @@ parser.add_argument("--quiet", action="store_true", help="Disable batch progress
 # GRIT-specific
 parser.add_argument("--grit_num_heads", type=int, help="Number of heads in the GRIT attention")
 parser.add_argument("--grit_attn_dropout", type=float, help="Dropout ratio for the GRIT attention layer")
+parser.add_argument("--grit_act", type=str, default="relu", help="Activation used by GRIT layers")
 
 # GPS-specific
 parser.add_argument("--gps_num_heads", type=int, help="Number of heads in GPS global attention")
@@ -96,10 +112,9 @@ class EpochSummaryCallback(Callback):
 
 def train(seed, config):
     """Train and validate the model."""
-    config = parser.parse_args()
     task = config.task
 
-    L.seed_everything(seed)
+    L.seed_everything(seed, workers=True)
     batch_size = config.batch_size
 
     print("Current directory: ", os.getcwd())
@@ -120,13 +135,25 @@ def train(seed, config):
     print(f"Scaling factor for {task}: {scaling_factor}")
 
     train_loader = DataLoader(
-        data_train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True
+        data_train,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=config.num_workers,
+        pin_memory=True,
     )
     val_loader = DataLoader(
-        data_val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True
+        data_val,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=True,
     )
     test_loader = DataLoader(
-        data_test, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True
+        data_test,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=config.num_workers,
+        pin_memory=True,
     )
 
     print("Data loaded")
@@ -143,17 +170,27 @@ def train(seed, config):
     )
 
     callbacks = [
-        EarlyStopping(monitor="val_loss", patience=100),
-        ModelCheckpoint(monitor="val_loss", save_top_k=1),
+        EarlyStopping(
+            monitor=config.monitor_metric,
+            patience=config.early_stopping_patience,
+            mode="min",
+        ),
+        ModelCheckpoint(
+            monitor=config.monitor_metric,
+            save_top_k=1,
+            mode="min",
+            filename="{epoch:04d}-{" + config.monitor_metric + ":.6f}",
+        ),
     ]
     if config.quiet:
         callbacks.append(EpochSummaryCallback())
 
     trainer = L.Trainer(
-        max_epochs=1000,
+        max_epochs=config.max_epochs,
         accelerator=config.device,
         strategy="ddp_find_unused_parameters_true" if config.device == "gpu" else "auto",
         callbacks=callbacks,
+        deterministic=config.deterministic,
         enable_progress_bar=not config.quiet,
         enable_model_summary=not config.quiet,
         log_every_n_steps=200,
@@ -189,8 +226,17 @@ def train(seed, config):
 if __name__ == "__main__":
     args = parser.parse_args()
     metrics = train(
-        seed=5,
+        seed=args.seed,
         config=args,
     )
 
     print("Metrics: ", metrics)
+    if args.result_json:
+        result_path = Path(args.result_json)
+        result_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "seed": args.seed,
+            "config": vars(args),
+            "metrics": metrics,
+        }
+        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
