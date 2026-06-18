@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SEEDS="${SEEDS:-43 44 45 46 47}"
-GPU_IDS="${GPU_IDS:-0 1 2 3 4}"
+SEEDS="${SEEDS:-1 2 3 4}"
+GPU_IDS="${GPU_IDS:-0 1 2 3}"
 RUNS="${RUNS:-gps_diam gps_ecc gps_sssp gps_charge gps_energy grit_diam grit_ecc grit_sssp grit_charge grit_energy}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-results/multiseed}"
@@ -134,7 +134,7 @@ fi
 
 for run_name in ${RUNS}; do
   echo "============================================================"
-  echo "Starting five-seed group: ${run_name}"
+  echo "Starting benchmark-aligned four-seed group: ${run_name}"
   echo "============================================================"
 
   pids=()
