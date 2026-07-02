@@ -1,0 +1,16 @@
+run_name: gps_diam
+base_model: GPS
+task: diam
+num_layers: 21
+hidden_dim: 80
+batch_size: 256
+lr: 0.00007027506842162453
+weight_decay: 0.00018881921338068878
+dropout_prob: 0.0
+gps_num_heads: 2
+gps_attn_dropout: 0.03
+gps_attn_type: multihead
+attnres_history_stride: 8
+variants: [none, pre_gt, pre_ffn, both]
+selection_rule: fixed_best_config_from_main_GPSAttnRes_diam
+

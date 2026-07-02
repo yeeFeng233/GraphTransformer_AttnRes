@@ -120,6 +120,14 @@ ray_tmp/
 results/
 short_report.pdf
 
+# Ablation heavy artifacts. Keep ablation code/configs, but do not upload runs.
+ablations/**/results/
+ablations/**/logs/
+ablations/**/checkpoints/
+ablations/**/figures/*.png
+ablations/**/figures/*.pdf
+ablations/**/figures/*.svg
+
 # Local paper workspace; do not upload draft notes, generated PDFs, tables, or build artifacts.
 paper_bigdata2026/
 

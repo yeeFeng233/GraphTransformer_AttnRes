@@ -1,0 +1,15 @@
+run_name: grit_sssp
+base_model: GRIT
+task: sssp
+num_layers: 44
+hidden_dim: 96
+batch_size: 224
+lr: 0.00028
+weight_decay: 0.00015
+dropout_prob: 0.05
+grit_num_heads: 4
+grit_attn_dropout: 0.1
+grit_act: relu
+variants: [none, pre_gt, pre_ffn, both]
+selection_rule: fixed_best_config_from_main_GRITAttnRes_sssp
+

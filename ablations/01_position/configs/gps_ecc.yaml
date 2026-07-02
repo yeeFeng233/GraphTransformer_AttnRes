@@ -1,0 +1,16 @@
+run_name: gps_ecc
+base_model: GPS
+task: ecc
+num_layers: 19
+hidden_dim: 192
+batch_size: 256
+lr: 0.00028926866413819184
+weight_decay: 0.000054850931995345765
+dropout_prob: 0.05
+gps_num_heads: 2
+gps_attn_dropout: 0.05
+gps_attn_type: multihead
+attnres_history_stride: 4
+variants: [none, pre_gt, pre_ffn, both]
+selection_rule: fixed_best_config_from_main_GPSAttnRes_ecc
+
