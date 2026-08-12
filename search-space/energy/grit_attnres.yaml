@@ -1,0 +1,56 @@
+﻿method: bayes
+metric:
+  goal: minimize
+  name: val_mae
+gnn_type: GNN
+parameters:
+  conv_layer:
+    values:
+      - GRITAttnRes
+  num_layers:
+    values:
+      - 8
+      - 12
+      - 16
+  hidden_dim:
+    values:
+      - 64
+      - 96
+      - 128
+  batch_size:
+    values:
+      - 128
+  lr:
+    distribution: loguniform
+    min: 0.00020
+    max: 0.00100
+  weight_decay:
+    distribution: loguniform
+    min: 0.00010
+    max: 0.00200
+  dropout_prob:
+    values:
+      - 0.0
+      - 0.05
+  grit_num_heads:
+    values:
+      - 2
+      - 4
+  grit_attn_dropout:
+    values:
+      - 0.05
+      - 0.18
+      - 0.30
+  grit_act:
+    values:
+      - relu
+  attnres_block_size:
+    values:
+      - 2
+      - 4
+      - 8
+initial_points:
+  - {num_layers: 12, hidden_dim: 64, batch_size: 128, lr: 0.00076, weight_decay: 0.00094, dropout_prob: 0.0, grit_num_heads: 2, grit_attn_dropout: 0.18, grit_act: relu, attnres_block_size: 8}
+  - {num_layers: 12, hidden_dim: 64, batch_size: 128, lr: 0.00076, weight_decay: 0.00094, dropout_prob: 0.0, grit_num_heads: 2, grit_attn_dropout: 0.18, grit_act: relu, attnres_block_size: 2}
+  - {num_layers: 12, hidden_dim: 64, batch_size: 128, lr: 0.00076, weight_decay: 0.00094, dropout_prob: 0.0, grit_num_heads: 2, grit_attn_dropout: 0.18, grit_act: relu, attnres_block_size: 4}
+

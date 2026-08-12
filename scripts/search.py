@@ -5,6 +5,7 @@ import math
 import os
 import sys
 import warnings
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -12,7 +13,6 @@ import ray
 import yaml
 from lightning.pytorch.callbacks import Callback
 from ray import tune
-from ray.air import session
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune.search.optuna import OptunaSearch
 
@@ -27,7 +27,7 @@ PROJECT_NAME = "your_wandb_project"
 ENTITY_NAME = "your_wandb_entity"
 SEEDS = [43]
 
-GPU_HEAVY_CONVS = {"GPSConv", "GPSAttnRes", "GRIT", "GRITAttnRes"}
+GPU_HEAVY_CONVS = {"GPSAttnRes", "GRITAttnRes"}
 RESERVED_CONFIG_KEYS = {
     "logger_type",
     "max_epochs",
@@ -96,7 +96,8 @@ def sanitize_model_config(config):
 def append_live_result(output_dir, task, config, metrics):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = output_dir / f"live_search_{task}.csv"
+    search_config = config.get("search_config", "unknown")
+    csv_path = output_dir / f"live_search_{task}_{search_config}.csv"
 
     row = {**sanitize_model_config(config), **metrics}
     priority_cols = [
@@ -105,8 +106,6 @@ def append_live_result(output_dir, task, config, metrics):
         "gnn_type",
         "val_mae",
         "val_loss",
-        "test_mae",
-        "test_loss",
     ]
     other_cols = [col for col in row.keys() if col not in priority_cols]
     fieldnames = [col for col in priority_cols if col in row] + sorted(other_cols)
@@ -114,10 +113,18 @@ def append_live_result(output_dir, task, config, metrics):
     with open(csv_path, "a+", newline="", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         handle.seek(0)
-        has_content = handle.read(1) != ""
+        existing_header = next(csv.reader(handle), None)
+        if existing_header:
+            unknown_fields = set(row) - set(existing_header)
+            if unknown_fields:
+                raise ValueError(
+                    f"Live CSV schema mismatch in {csv_path}: "
+                    f"new fields {sorted(unknown_fields)}"
+                )
+            fieldnames = existing_header
         handle.seek(0, os.SEEK_END)
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        if not has_content:
+        if not existing_header:
             writer.writeheader()
         writer.writerow(row)
         handle.flush()
@@ -146,7 +153,7 @@ def get_trial_log_path(config, trial_id):
         f"{config.get('task', 'task')}_{trial_id}_"
         f"L{config.get('num_layers')}_H{config.get('hidden_dim')}_"
         f"B{config.get('batch_size')}_heads{config.get('gps_num_heads')}_"
-        f"stride{config.get('attnres_history_stride')}_"
+        f"block{config.get('attnres_block_size')}_"
         f"lr{format_float_for_filename(config.get('lr'))}_"
         f"wd{format_float_for_filename(config.get('weight_decay'))}.log"
     )
@@ -206,14 +213,14 @@ class TuneMetricsCallback(Callback):
             f"layers={getattr(cfg, 'num_layers', None)} "
             f"hidden={getattr(cfg, 'hidden_dim', None)} "
             f"heads={getattr(cfg, 'gps_num_heads', None)} "
-            f"stride={getattr(cfg, 'attnres_history_stride', None)} "
+            f"block_size={getattr(cfg, 'attnres_block_size', None)} "
             f"lr={getattr(cfg, 'lr', None)} "
             f"wd={getattr(cfg, 'weight_decay', None)} "
             + " ".join(f"{k}={v:.6g}" for k, v in payload.items() if isinstance(v, float))
         )
         append_trial_log(self.config, self.trial_id, line)
 
-        session.report(payload)
+        tune.report(payload)
 
 
 def create_data_loaders(task, config):
@@ -230,7 +237,7 @@ def create_data_loaders(task, config):
         pre_transform = KHopTransform(k=config.get("khop", 1))
 
     data_root = config.get("data_root", str(PROJECT_ROOT / "data"))
-    data_train, data_val, data_test, num_feat, num_class = get_dataset(
+    data_train, data_val, _data_test, num_feat, num_class = get_dataset(
         root=data_root,
         task=task,
         pre_transform=pre_transform,
@@ -249,8 +256,7 @@ def create_data_loaders(task, config):
 
     train_loader = DataLoader(data_train, shuffle=True, **loader_kwargs)
     val_loader = DataLoader(data_val, shuffle=False, **loader_kwargs)
-    test_loader = DataLoader(data_test, shuffle=False, **loader_kwargs)
-    return train_loader, val_loader, test_loader, num_feat, num_class, scaling_factor
+    return train_loader, val_loader, num_feat, num_class, scaling_factor
 
 
 def create_model_and_trainer(config, num_feat, num_class, scaling_factor, task, logger_type="wandb", trial_id=None):
@@ -318,53 +324,52 @@ def create_model_and_trainer(config, num_feat, num_class, scaling_factor, task, 
 def train_model_tune(config):
     import lightning as L
     import torch
-    import wandb
 
     torch.set_float32_matmul_precision("high")
     L.seed_everything(SEEDS[0])
 
     logger_type = config.get("logger_type", "wandb")
     if logger_type == "wandb":
+        import wandb
+
         wandb.init(project=PROJECT_NAME, config=config, reinit=True, entity=ENTITY_NAME)
 
-    trial_id = session.get_trial_id()
+    trial_id = tune.get_context().get_trial_id()
     task = config["task"]
     print(
         f"[{trial_id}] start task={task} layers={config.get('num_layers')} hidden={config.get('hidden_dim')} "
-        f"batch={config.get('batch_size')} heads={config.get('gps_num_heads')} stride={config.get('attnres_history_stride')}"
+        f"batch={config.get('batch_size')} heads={config.get('gps_num_heads')} "
+        f"block_size={config.get('attnres_block_size')}"
     )
 
-    train_loader, val_loader, test_loader, num_feat, num_class, scaling_factor = create_data_loaders(task, config)
+    train_loader, val_loader, num_feat, num_class, scaling_factor = create_data_loaders(task, config)
     append_trial_log(config, trial_id, "[trial_start] " + " ".join(f"{k}={v}" for k, v in sorted(sanitize_model_config(config).items())))
     model, trainer = create_model_and_trainer(config, num_feat, num_class, scaling_factor, task, logger_type, trial_id=trial_id)
 
     trainer.fit(model, train_loader, val_loader)
     val_results = trainer.validate(model, val_loader, ckpt_path="best", verbose=False)
-    test_results = trainer.test(model, test_loader, ckpt_path="best", verbose=False)
 
     final_metrics = {
         "epoch": trainer.current_epoch + 1,
         "val_loss": val_results[0]["val_loss"],
         "val_mae": val_results[0].get("val_mae"),
-        "test_loss": test_results[0]["test_loss"],
-        "test_mae": test_results[0].get("test_mae"),
     }
 
     append_live_result(config["output_dir"], task, config, final_metrics)
     done_line = (
         f"[trial_done] trial={trial_id} task={task} val_loss={final_metrics['val_loss']:.5f} "
-        f"val_mae={final_metrics['val_mae']:.6f} test_mae={final_metrics['test_mae']:.6f}"
+        f"val_mae={final_metrics['val_mae']:.6f}"
     )
     append_trial_log(config, trial_id, done_line)
     print(done_line)
-    session.report(final_metrics)
+    tune.report(final_metrics)
 
     if logger_type == "wandb":
         wandb.finish()
 
 
 def load_search_space(config_path):
-    with open(config_path, "r", encoding="utf-8") as handle:
+    with open(config_path, "r", encoding="utf-8-sig") as handle:
         config = yaml.safe_load(handle)
 
     search_space = {}
@@ -380,7 +385,10 @@ def load_search_space(config_path):
 
 
 def save_trial_results(trials, task, output_dir):
-    csv_file = os.path.join(output_dir, f"search_{task}.csv")
+    csv_file = Path(output_dir) / f"search_{task}.csv"
+    if csv_file.exists():
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        csv_file = Path(output_dir) / f"search_{task}_{timestamp}.csv"
 
     results = []
     for trial in trials:
@@ -400,8 +408,6 @@ def save_trial_results(trials, task, output_dir):
         "gnn_type",
         "val_mae",
         "val_loss",
-        "test_mae",
-        "test_loss",
     ]
     other_cols = [col for col in df.columns if col not in priority_cols]
     column_order = [col for col in priority_cols if col in df.columns] + other_cols
@@ -427,12 +433,17 @@ def create_scheduler(args):
     scheduler = None
     if args.scheduler == "asha":
         reports_per_trial = math.ceil(args.max_epochs / args.report_every_n_epochs) + 1
+        default_grace_epochs = min(200, args.max_epochs)
+        default_grace_reports = max(
+            1,
+            math.ceil(default_grace_epochs / args.report_every_n_epochs),
+        )
         scheduler = ASHAScheduler(
             time_attr="training_iteration",
             metric=args.monitor_metric,
             mode="min",
             max_t=reports_per_trial,
-            grace_period=args.asha_grace_period or max(3, min(8, reports_per_trial // 4)),
+            grace_period=args.asha_grace_period or default_grace_reports,
             reduction_factor=2,
         )
 
@@ -494,7 +505,9 @@ def run_experiments_for_task(task, args, scheduler):
             4,
             math.ceil(args.max_epochs / args.report_every_n_epochs / 4),
         )
-        search_space["artifact_root"] = str(PROJECT_ROOT)
+        search_space["artifact_root"] = str(
+            Path(args.output_dir).resolve().parent
+        )
 
         initial_points = complete_initial_points(search_space, initial_points)
         search_alg = create_search_alg(args, initial_points)
@@ -519,25 +532,33 @@ def run_experiments_for_task(task, args, scheduler):
 def print_experiment_summary(tasks, output_dir):
     print("\nExperiment Summary:")
     for task in tasks:
-        csv_file = os.path.join(output_dir, f"search_{task}.csv")
-        if not os.path.exists(csv_file):
+        candidates = sorted(Path(output_dir).glob(f"search_{task}*.csv"))
+        if not candidates:
             continue
 
+        csv_file = candidates[-1]
         df = pd.read_csv(csv_file)
         print(f"\nTask {task}:")
         print(f"  Total completed trials: {len(df)}")
-        for metric in ("val_mae", "val_loss"):
-            if metric in df.columns:
-                valid = df[metric].dropna()
-                if len(valid) > 0:
-                    best_idx = df[metric].idxmin()
-                    best = df.loc[best_idx]
-                    print(
-                        f"  Best by {metric}: {metric}={best[metric]:.6f}, "
-                        f"val_loss={best.get('val_loss', float('nan')):.5f}, "
-                        f"val_mae={best.get('val_mae', float('nan')):.6f}, "
-                        f"test_mae={best.get('test_mae', float('nan')):.6f}"
-                    )
+        groups = (
+            df.groupby("conv_layer", dropna=False)
+            if "conv_layer" in df.columns
+            else [("unknown", df)]
+        )
+        for model_name, model_df in groups:
+            print(f"  Model {model_name}: {len(model_df)} completed trials")
+            for metric in ("val_mae", "val_loss"):
+                if metric not in model_df.columns:
+                    continue
+                valid = model_df[metric].dropna()
+                if len(valid) == 0:
+                    continue
+                best = model_df.loc[valid.idxmin()]
+                print(
+                    f"    Best by {metric}: "
+                    f"val_loss={best.get('val_loss', float('nan')):.5f}, "
+                    f"val_mae={best.get('val_mae', float('nan')):.6f}"
+                )
 
 
 def parse_arguments():
@@ -552,7 +573,12 @@ def parse_arguments():
     parser.add_argument("--cpus_per_trial", type=int, default=4, help="CPU resources to reserve for each Ray trial")
     parser.add_argument("--gpus_per_trial", type=int, default=1, help="GPU resources to reserve for each Ray trial")
     parser.add_argument("--num_workers", type=int, default=2, help="PyG dataloader workers per trial")
-    parser.add_argument("--models", nargs="+", default=None, help="Specific search-space files to test")
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        default=["gps_attnres", "grit_attnres"],
+        help="AttnRes search-space files to run.",
+    )
     parser.add_argument("--entity_name", type=str, default=ENTITY_NAME, help="Wandb entity name for logging")
     parser.add_argument("--scheduler", type=str, default="asha", choices=["asha", "none"], help="Scheduler to use")
     parser.add_argument("--search_alg", type=str, default="optuna", choices=["optuna", "random"], help="Search algorithm")
@@ -561,7 +587,15 @@ def parse_arguments():
     parser.add_argument("--report_every_n_epochs", type=int, default=5, help="Validation/report interval in epochs")
     parser.add_argument("--early_stopping_patience", type=int, default=None, help="Lightning early stopping patience in validation checks")
     parser.add_argument("--monitor_metric", type=str, default="val_loss", choices=["val_loss", "val_mae"], help="Metric for Optuna/ASHA/checkpoint/early stopping")
-    parser.add_argument("--asha_grace_period", type=int, default=None, help="ASHA grace period in reported validation checks")
+    parser.add_argument(
+        "--asha_grace_period",
+        type=int,
+        default=None,
+        help=(
+            "ASHA grace period measured in validation reports. The default "
+            "protects the first min(200, max_epochs) epochs."
+        ),
+    )
     parser.add_argument("--training_log_dir", type=str, default=None, help="Directory for per-trial epoch training logs")
     return parser.parse_args()
 

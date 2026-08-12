@@ -14,11 +14,15 @@ from lightning.pytorch.callbacks import Callback
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from torch_geometric.loader import DataLoader
 
-from utils import KHopTransform, get_dataset
+from utils import get_dataset
 from utils.litmodels import LitGraphNN
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", type=str, help="Task to run: [sssp, ecc, diam, charge, energy]")
+parser.add_argument(
+    "--task",
+    required=True,
+    choices=["sssp", "ecc", "diam", "charge", "energy"],
+)
 parser.add_argument("--device", type=str, default="gpu", help="Device to use for training")
 parser.add_argument("--seed", type=int, default=5, help="Random seed")
 parser.add_argument(
@@ -35,61 +39,41 @@ parser.add_argument("--deterministic", action="store_true")
 parser.add_argument("--result_json", type=str, help="Optional path for metrics and config JSON")
 
 # general gnn parameters
-parser.add_argument("--conv_layer", type=str)
-parser.add_argument("--num_layers", type=int, help="Number of layers in the GNN")
-parser.add_argument("--hidden_dim", type=int, help="Hidden dimension of the GNN")
-parser.add_argument("--lr", type=float, help="Learning rate for the optimizer")
+parser.add_argument(
+    "--conv_layer",
+    required=True,
+    choices=["GPSAttnRes", "GRITAttnRes"],
+)
+parser.add_argument("--num_layers", type=int, required=True)
+parser.add_argument("--hidden_dim", type=int, required=True)
+parser.add_argument("--lr", type=float, required=True)
 parser.add_argument("--weight_decay", type=float, default=0.2, help="Weight decay for the optimizer")
 parser.add_argument("--batch_size", type=int, default=256, help="Batch size for the DataLoader")
-parser.add_argument("--gnn_type", type=str)
+parser.add_argument("--gnn_type", type=str, default="GNN", choices=["GNN"])
 parser.add_argument("--dropout_prob", type=float, default=0.0, help="Dropout probability for the backbone")
 parser.add_argument("--quiet", action="store_true", help="Disable batch progress output and print epoch summaries")
+parser.add_argument(
+    "--attnres_block_size",
+    type=int,
+    default=1,
+    help="1 selects Full AttnRes; values >1 select Block AttnRes.",
+)
 
 # GRIT-specific
-parser.add_argument("--grit_num_heads", type=int, help="Number of heads in the GRIT attention")
-parser.add_argument("--grit_attn_dropout", type=float, help="Dropout ratio for the GRIT attention layer")
+parser.add_argument("--grit_num_heads", type=int, default=4)
+parser.add_argument("--grit_attn_dropout", type=float, default=0.0)
 parser.add_argument("--grit_act", type=str, default="relu", help="Activation used by GRIT layers")
 
 # GPS-specific
-parser.add_argument("--gps_num_heads", type=int, help="Number of heads in GPS global attention")
-parser.add_argument("--gps_attn_dropout", type=float, help="Dropout ratio for GPS global attention")
+parser.add_argument("--gps_num_heads", type=int, default=4)
+parser.add_argument("--gps_attn_dropout", type=float, default=0.0)
 parser.add_argument(
     "--gps_attn_type",
     type=str,
+    default="multihead",
     choices=["multihead", "performer"],
     help="Attention type for GPS-based models",
 )
-parser.add_argument(
-    "--attnres_history_stride",
-    type=int,
-    help="History stride for GPSAttnRes depth residuals",
-)
-
-# adgn, swan specific params
-parser.add_argument("--epsilon", type=float, default=0.1, help="Epsilon for the ADGN model")
-parser.add_argument("--gamma", type=float, default=0.1, help="Gamma for the ADGN model")
-parser.add_argument("--activ_fun", type=str, default="tanh", help="Activation function for the ADGN model")
-parser.add_argument("--graph_conv", type=str, default="GCNConv", help="Graph convolution layer for the ADGN model")
-parser.add_argument("--bias", type=bool, help="Use bias in the ADGN model")
-parser.add_argument("--train_weights", type=bool)
-parser.add_argument("--weight_sharing", type=bool, help="Use weight sharing in the ADGN model")
-
-# drew specific parameters
-parser.add_argument("--khop", type=int)
-parser.add_argument("--delay", type=bool)
-parser.add_argument("--constant_feature", type=float, help="Constant feature")
-
-# gcn2 params
-parser.add_argument("--alpha", type=float, help="Alpha for the GCN2 model")
-
-# phdgn specific parameters
-parser.add_argument("--beta", type=float, help="Beta parameter for the PHDGN model")
-parser.add_argument("--p_conv_mode", type=str, choices=["naive", "gcn"], help="P convolution mode for the PhDGN model")
-parser.add_argument("--q_conv_mode", type=str, choices=["naive", "gcn"], help="Q convolution mode for the PhDGN model")
-parser.add_argument("--doubled_dim", type=bool, choices=[True, False], help="Whether to double the dimension in the PhDGN model")
-parser.add_argument("--final_state", type=str, choices=["p", "q", "pq"], help="Final state mode for the PhDGN model")
-parser.add_argument("--dampening_mode", type=str, choices=["param", "param+", "MLP4ReLU", "DGNReLU", "none"], help="Dampening mode for the PhDGN model")
-parser.add_argument("--external_mode", type=str, choices=["MLP4Sin", "DGNtanh", "none"], help="External mode for the PhDGN model")
 
 
 torch.set_float32_matmul_precision("high")
@@ -122,10 +106,8 @@ def train(seed, config):
     data_train, data_val, data_test, num_feat, num_class = get_dataset(
         root="./data/",
         task=task,
-        pre_transform=(
-            KHopTransform(k=config.khop) if config.gnn_type == "DRew_GCN" else None
-        ),
-        constant_feature=config.constant_feature,
+        pre_transform=None,
+        constant_feature=None,
     )
 
     scaling_factor = data_train.scaling_factor[task]
@@ -188,7 +170,13 @@ def train(seed, config):
     trainer = L.Trainer(
         max_epochs=config.max_epochs,
         accelerator=config.device,
-        strategy="ddp_find_unused_parameters_true" if config.device == "gpu" else "auto",
+        devices=1,
+        strategy="auto",
+        default_root_dir=(
+            str(Path(config.result_json).resolve().parent)
+            if config.result_json
+            else "results/train"
+        ),
         callbacks=callbacks,
         deterministic=config.deterministic,
         enable_progress_bar=not config.quiet,
@@ -239,4 +227,9 @@ if __name__ == "__main__":
             "config": vars(args),
             "metrics": metrics,
         }
-        result_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        temporary_path = result_path.with_suffix(result_path.suffix + ".tmp")
+        temporary_path.write_text(
+            json.dumps(payload, indent=2),
+            encoding="utf-8",
+        )
+        temporary_path.replace(result_path)

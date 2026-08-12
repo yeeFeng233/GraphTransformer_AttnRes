@@ -1,34 +1,19 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from __future__ import annotations
 
+from typing import Any, Dict, Optional
+
+import torch
+import torch.nn.functional as F
+from torch import Tensor
 from torch_geometric.nn import GPSConv
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import to_dense_batch
 
-from typing import Any, Dict, List, Optional
-
-
-class DepthAttnRes(nn.Module):
-    def __init__(self, dim: int):
-        super().__init__()
-        self.q = nn.Parameter(torch.zeros(dim))
-        self.key_norm = nn.RMSNorm(dim)
-
-    def forward(self, history: Optional[List[torch.Tensor]], partial_block: torch.Tensor) -> torch.Tensor:
-        history = history or []
-        local_history = history + [partial_block]
-        scores = torch.stack(
-            [(self.key_norm(h) * self.q).sum(dim=-1) for h in local_history],
-            dim=0,
-        )
-        alpha = scores.softmax(dim=0)
-        out = sum(alpha[i].unsqueeze(-1) * local_history[i] for i in range(len(local_history)))
-        return out
+from .depth_attnres import AttnResHistory, DepthAttnRes
 
 
 class GPSAttnResConv(GPSConv):
-    """GPSConv with depth-wise Attention Residuals on the block input and FFN path."""
+    """GPS propagation with Full/Block AttnRes replacing node residual sums."""
 
     def __init__(
         self,
@@ -38,13 +23,12 @@ class GPSAttnResConv(GPSConv):
         dropout: float = 0.0,
         act: str = "relu",
         act_kwargs: Optional[Dict[str, Any]] = None,
-        norm: Optional[str] = "batch_norm",
+        norm: Optional[str] = "layer",
         norm_kwargs: Optional[Dict[str, Any]] = None,
         attn_type: str = "multihead",
         attn_kwargs: Optional[Dict[str, Any]] = None,
         lidx: int = 0,
-        attnres_history_stride: int = 2,
-    ):
+    ) -> None:
         super().__init__(
             channels=channels,
             conv=conv,
@@ -57,58 +41,62 @@ class GPSAttnResConv(GPSConv):
             attn_type=attn_type,
             attn_kwargs=attn_kwargs,
         )
-        self.lidx = lidx
-        self.attnres_history_stride = max(1, attnres_history_stride)
-        self.pre_res_attn = DepthAttnRes(channels)
-        self.ffn_res_attn = DepthAttnRes(channels)
+        self.lidx = int(lidx)
+        self.pre_gt_attnres = DepthAttnRes(channels)
+        self.pre_ffn_attnres = DepthAttnRes(channels)
+
+    def _pre_norm(self, norm, x: Tensor, batch: Optional[Tensor]) -> Tensor:
+        if norm is None:
+            return x
+        if self.norm_with_batch:
+            return norm(x, batch=batch)
+        return norm(x)
 
     def forward(
         self,
-        x: torch.Tensor,
+        x: Tensor,
         edge_index,
-        batch: Optional[torch.Tensor] = None,
-        history: Optional[List[torch.Tensor]] = None,
+        batch: Optional[Tensor],
+        history: AttnResHistory,
         **kwargs,
-    ) -> torch.Tensor:
-        history = history or []
-        x_in = self.pre_res_attn(history, x)
+    ) -> Tensor:
+        del x  # The residual stream is represented explicitly by history.
 
-        hs = []
+        routed_gt = self.pre_gt_attnres(history.candidates())
+        gt_contributions = []
+
         if self.conv is not None:
-            h = self.conv(x_in, edge_index, **kwargs)
-            h = F.dropout(h, p=self.dropout, training=self.training)
-            h = h + x_in
-            if self.norm1 is not None:
-                if self.norm_with_batch:
-                    h = self.norm1(h, batch=batch)
-                else:
-                    h = self.norm1(h)
-            hs.append(h)
+            local_in = self._pre_norm(self.norm1, routed_gt, batch)
+            local = self.conv(local_in, edge_index, **kwargs)
+            local = F.dropout(local, p=self.dropout, training=self.training)
+            gt_contributions.append(local)
 
-        h, mask = to_dense_batch(x_in, batch)
+        global_in = self._pre_norm(self.norm2, routed_gt, batch)
+        dense, mask = to_dense_batch(global_in, batch)
         if isinstance(self.attn, torch.nn.MultiheadAttention):
-            h, _ = self.attn(h, h, h, key_padding_mask=~mask, need_weights=False)
+            global_out, _ = self.attn(
+                dense,
+                dense,
+                dense,
+                key_padding_mask=~mask,
+                need_weights=False,
+            )
         else:
-            h = self.attn(h, mask=mask)
+            global_out = self.attn(dense, mask=mask)
+        global_out = global_out[mask]
+        global_out = F.dropout(
+            global_out,
+            p=self.dropout,
+            training=self.training,
+        )
+        gt_contributions.append(global_out)
 
-        h = h[mask]
-        h = F.dropout(h, p=self.dropout, training=self.training)
-        h = h + x_in
-        if self.norm2 is not None:
-            if self.norm_with_batch:
-                h = self.norm2(h, batch=batch)
-            else:
-                h = self.norm2(h)
-        hs.append(h)
+        gt_contribution = sum(gt_contributions)
+        history.append(gt_contribution, f"gt_{self.lidx}")
 
-        out = sum(hs) if hs else x_in
+        routed_ffn = self.pre_ffn_attnres(history.candidates())
+        ffn_in = self._pre_norm(self.norm3, routed_ffn, batch)
+        ffn_contribution = self.mlp(ffn_in)
+        history.append(ffn_contribution, f"ffn_{self.lidx}")
+        return ffn_contribution
 
-        ffn_in = self.ffn_res_attn(history, out)
-        out = ffn_in + self.mlp(ffn_in)
-        if self.norm3 is not None:
-            if self.norm_with_batch:
-                out = self.norm3(out, batch=batch)
-            else:
-                out = self.norm3(out)
-
-        return out

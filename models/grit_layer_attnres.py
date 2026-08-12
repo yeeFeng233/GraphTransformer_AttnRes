@@ -14,25 +14,7 @@ from yacs.config import CfgNode as CN
 
 import warnings
 
-
-class DepthAttnRes(nn.Module):
-    def __init__(self, dim: int):
-        super().__init__()
-        self.q = nn.Parameter(torch.zeros(dim))   # zero-init like AttnRes
-        self.key_norm = nn.RMSNorm(dim)
-
-    def forward(self, history, partial_block):
-        # history: list of tensors, each [N, D]
-        # scores: [S, N]
-        local_history = history + [partial_block]
-        scores = torch.stack(
-            [(self.key_norm(h) * self.q).sum(dim=-1) for h in local_history],
-            dim=0
-        )
-        alpha = scores.softmax(dim=0)  # softmax over depth
-        out = sum(alpha[i].unsqueeze(-1) * local_history[i] for i in range(len(local_history)))
-        return out
-
+from .depth_attnres import AttnResHistory, DepthAttnRes
 
 def pyg_softmax(src, index, num_nodes=None):
     r"""Computes a sparsely evaluated softmax.
@@ -101,7 +83,6 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
             self.VeRow = nn.Parameter(torch.zeros(self.out_dim, self.num_heads, self.out_dim), requires_grad=True)
             nn.init.xavier_normal_(self.VeRow)
 
-    """
     def propagate_attention(self, batch):
         src = batch.K_h[batch.edge_index[0]]      # (num relative) x num_heads x out_dim
         dest = batch.Q_h[batch.edge_index[1]]     # (num relative) x num_heads x out_dim
@@ -141,50 +122,6 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
             rowV = scatter(e_t * score, batch.edge_index[1], dim=0, reduce="add")
             rowV = oe.contract("nhd, dhc -> nhc", rowV, self.VeRow, backend="torch")
             batch.wV = batch.wV + rowV
-    """
-
-    def propagate_attention(self, edge_index, Q_h, K_h, V_h, E, num_nodes):
-        src = K_h[edge_index[0]]      # (num relative) x num_heads x out_dim
-        dest = Q_h[edge_index[1]]     # (num relative) x num_heads x out_dim
-        score = src + dest                        # element-wise multiplication
-
-        if E is not None:
-            E = E.view(-1, self.num_heads, self.out_dim * 2)
-            E_w, E_b = E[:, :, :self.out_dim], E[:, :, self.out_dim:]
-            # (num relative) x num_heads x out_dim
-            score = score * E_w
-            score = torch.sqrt(torch.relu(score)) - torch.sqrt(torch.relu(-score))
-            score = score + E_b
-
-        score = self.act(score)
-        e_t = score
-
-        # output edge
-        if E is not None:
-            wE = score.flatten(1)
-        else:
-            wE = None
-
-        # final attn
-        score = oe.contract("ehd, dhc->ehc", score, self.Aw, backend="torch")
-        if self.clamp is not None:
-            score = torch.clamp(score, min=-self.clamp, max=self.clamp)
-
-        raw_attn = score
-        score = pyg_softmax(score, edge_index[1])  # (num relative) x num_heads x 1
-        score = self.dropout(score)
-
-        # Aggregate with Attn-Score
-        msg = V_h[edge_index[0]] * score  # (num relative) x num_heads x out_dim
-        wV = torch.zeros_like(V_h)  # (num nodes in batch) x num_heads x out_dim
-        scatter(msg, edge_index[1], dim=0, out=wV, reduce='add')
-
-        if self.edge_enhance and E is not None:
-            rowV = scatter(e_t * score, edge_index[1], dim=0, reduce="add")
-            rowV = oe.contract("nhd, dhc -> nhc", rowV, self.VeRow, backend="torch")
-            wV = wV + rowV
-
-        return wV, wE
 
     def forward(self, batch):
         Q_h = self.Q(batch.x)
@@ -196,16 +133,16 @@ class MultiHeadAttentionLayerGritSparse(nn.Module):
         else:
             batch.E = None
 
-        Q_h = Q_h.view(-1, self.num_heads, self.out_dim)
-        K_h = K_h.view(-1, self.num_heads, self.out_dim)
-        V_h = V_h.view(-1, self.num_heads, self.out_dim)
-        E = self.E(batch.edge_attr).view(-1, self.num_heads, self.out_dim * 2) if batch.get("edge_attr", None) is not None else None
-        h_out, e_out = self.propagate_attention(batch.edge_index, Q_h, K_h, V_h, E, batch.num_nodes)
+        batch.Q_h = Q_h.view(-1, self.num_heads, self.out_dim)
+        batch.K_h = K_h.view(-1, self.num_heads, self.out_dim)
+        batch.V_h = V_h.view(-1, self.num_heads, self.out_dim)
+        self.propagate_attention(batch)
+        h_out = batch.wV
+        e_out = batch.get('wE', None)
 
         return h_out, e_out
 
 
-@register_layer("GritAttnResTransformer")
 class GritAttnResTransformerLayer(nn.Module):
     """
         Proposed Transformer Layer for GRIT
@@ -213,8 +150,7 @@ class GritAttnResTransformerLayer(nn.Module):
     def __init__(self, in_dim, out_dim, num_heads,
                  dropout=0.0,
                  attn_dropout=0.0,
-                 layer_norm=False,
-                 batch_norm=True,
+                 layer_norm=False, batch_norm=True,
                  residual=True,
                  act='relu',
                  norm_e=True,
@@ -316,27 +252,33 @@ class GritAttnResTransformerLayer(nn.Module):
             self.alpha2_h = nn.Parameter(torch.zeros(1,1))
             self.alpha1_e = nn.Parameter(torch.zeros(1,1))
 
-        # Atten Res
-        self.lidx = cfg.get("lidx", None)
-        self.block_size = 8 # TODO: as a hyperparam
-        self.node_res_attn = DepthAttnRes(out_dim)
-        self.node_res_ffn = DepthAttnRes(out_dim)
+        self.lidx = int(cfg.get("lidx", 0))
+        self.pre_gt_attnres = DepthAttnRes(out_dim)
+        self.pre_ffn_attnres = DepthAttnRes(out_dim)
 
-    def forward(self, batch, history=None):
-        partial_block = batch.x
-        h_attn_in = self.node_res_attn(history, partial_block)
-        if self.lidx % (self.block_size // 2) == 0:
-            history.append(partial_block)
-            partial_block = None
-        batch.x = h_attn_in
+    def _pre_norm_gt(self, h):
+        if self.layer_norm:
+            h = self.layer_norm1_h(h)
+        if self.batch_norm:
+            h = self.batch_norm1_h(h)
+        return h
+
+    def _pre_norm_ffn(self, h):
+        if self.layer_norm:
+            h = self.layer_norm2_h(h)
+        if self.batch_norm:
+            h = self.batch_norm2_h(h)
+        return h
+
+    def forward(self, batch, history: AttnResHistory):
+        routed_gt = self.pre_gt_attnres(history.candidates())
+        batch.x = self._pre_norm_gt(routed_gt)
+
         num_nodes = batch.num_nodes
         log_deg = get_log_deg(batch)
 
-        #h_in1 = h  # for first residual connection
-        h_in1 = h_attn_in  # for first residual connection
         e_in1 = batch.get("edge_attr", None)
         e = None
-        # multi-head attention out
 
         h_attn_out, e_attn_out = self.attention(batch)
 
@@ -349,49 +291,37 @@ class GritAttnResTransformerLayer(nn.Module):
             h = (h * self.deg_coef).sum(dim=-1)
 
         h = self.O_h(h)
+        if self.rezero:
+            h = h * self.alpha1_h
+        history.append(h, f"gt_{self.lidx}")
+
         if e_attn_out is not None:
             e = e_attn_out.flatten(1)
             e = F.dropout(e, self.dropout, training=self.training)
             e = self.O_e(e)
 
-        if self.residual:
-            if self.rezero: h = h * self.alpha1_h
-            h = h_in1 + h  # residual connection
-            if e is not None:
-                if self.rezero: e = e * self.alpha1_e
-                e = e + e_in1
+        # GRIT's edge stream is recurrent state, not the node residual stream.
+        if e is not None and e_in1 is not None:
+            if self.rezero:
+                e = e * self.alpha1_e
+            e = e + e_in1
+            if self.layer_norm:
+                e = self.layer_norm1_e(e)
+            if self.batch_norm:
+                e = self.batch_norm1_e(e)
 
-        if self.layer_norm:
-            h = self.layer_norm1_h(h)
-            if e is not None: e = self.layer_norm1_e(e)
-
-        if self.batch_norm:
-            h = self.batch_norm1_h(h)
-            if e is not None: e = self.batch_norm1_e(e)
-
-        partial_block = partial_block + h if partial_block is not None else h
-
-        # FFN for h
-        h_ffn_in = self.node_res_ffn(history, partial_block)
-        h_in2 = h_ffn_in
-        #h_in2 = h  # for second residual connection
-        h = self.FFN_h_layer1(h_ffn_in)
-        #h = self.FFN_h_layer1(h)
+        routed_ffn = self.pre_ffn_attnres(history.candidates())
+        ffn_in = self._pre_norm_ffn(routed_ffn)
+        h = self.FFN_h_layer1(ffn_in)
         h = self.act(h)
         h = F.dropout(h, self.dropout, training=self.training)
         h = self.FFN_h_layer2(h)
 
-        if self.residual:
-            if self.rezero: h = h * self.alpha2_h
-            h = h_in2 + h  # residual connection
+        if self.rezero:
+            h = h * self.alpha2_h
+        history.append(h, f"ffn_{self.lidx}")
 
-        if self.layer_norm:
-            h = self.layer_norm2_h(h)
-
-        if self.batch_norm:
-            h = self.batch_norm2_h(h)
-
-        batch.x = h + partial_block
+        batch.x = h
         if self.update_e:
             batch.edge_attr = e
         else:

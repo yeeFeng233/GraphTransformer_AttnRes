@@ -121,14 +121,79 @@ results/
 short_report.pdf
 
 # Ablation heavy artifacts. Keep ablation code/configs, but do not upload runs.
-ablations/**/results/
-ablations/**/logs/
-ablations/**/checkpoints/
+ablations/**/results*/
+ablations/**/logs*/
+ablations/**/checkpoints*/
 ablations/**/figures/*.png
 ablations/**/figures/*.pdf
 ablations/**/figures/*.svg
+ablations/**/paper_artifacts/
+
+# Corrected-ablation artifacts. Keep source/configs/tests, not generated runs.
+ablations_corrected/**/results*/
+ablations_corrected/**/logs*/
+ablations_corrected/**/checkpoints*/
+ablations_corrected/**/smoke_runs*/
+ablations_corrected/**/figures/*.png
+ablations_corrected/**/figures/*.pdf
+ablations_corrected/**/figures/*.svg
+
+# Exploratory heavy artifacts. Keep code/configs; ignore local runs.
+explorations/**/results/**
+explorations/**/logs/**
+explorations/**/checkpoints/**
 
 # Local paper workspace; do not upload draft notes, generated PDFs, tables, or build artifacts.
 paper_bigdata2026/
+
+# Private research workspaces; the public repository contains main experiments only.
+ablations/
+ablations_corrected/
+attnres_corrected/
+backbone_reruns/
+explorations/
+external_benchmarks/
+tmp/
+PROJECT_STATUS.md
+paper_bigdata2026.zip
+
+# Server-local environment snapshots and temporary exports.
+requirements.server.txt
+environment.lyf_echo.yml
+pyproject.toml
+pyproject.toml.bak
+uv.lock
+
+# Retained local copies of upstream baselines; excluded from the main-experiment release.
+notebooks/
+models/adgn.py
+models/drew_delay.py
+models/graphcon.py
+models/grit_layer.py
+models/matrix_parametrizations.py
+models/phdgn.py
+models/phdgn_utils.py
+models/swan.py
+scripts/run_GPS_best_config.sh
+scripts/run_GPS_energy_reproduce.sh
+scripts/run_GRIT_best_config.sh
+scripts/run_search.sh
+scripts/run_GPSAttnRes_best_config.sh
+scripts/run_GPSAttnRes_diam_search.sh
+scripts/run_GPSAttnRes_ecc_search.sh
+scripts/run_GPSAttnRes_energy_search.sh
+scripts/run_GPSAttnRes_energy_search_part1.sh
+scripts/run_GPSAttnRes_energy_search_part2.sh
+scripts/run_GPSAttnRes_search.sh
+scripts/run_GPSAttnRes_sssp_search.sh
+scripts/run_GPSAttnRes_synth_search.sh
+scripts/run_GRITAttnRes_best_config.sh
+scripts/run_GRITAttnRes_diam_search.sh
+scripts/run_GRITAttnRes_ecc_search.sh
+scripts/run_GRITAttnRes_sssp_search.sh
+scripts/run_GRITAttnRes_synth_search.sh
+search-space/**/*_gp.yaml
+search-space/**/*_gp_part*.yaml
+search-space/chem/
 
 .vscode

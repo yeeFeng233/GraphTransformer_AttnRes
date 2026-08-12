@@ -2,11 +2,6 @@ import torch
 from torch_geometric.data.lightning import LightningDataset
 import lightning as L
 from models.gnn import GNN
-from models.adgn import ADGN
-from models.drew_delay import DRew_GCN
-from models.graphcon import GraphCON
-from models.phdgn import PHDGN
-from models.swan import SWAN
 import time
 import csv
 import pathlib
@@ -16,11 +11,6 @@ from typing import Optional
 
 models_map = {
     "GNN": GNN,
-    "ADGN": ADGN,
-    "DRew_GCN": DRew_GCN,
-    "GraphCON": GraphCON,
-    "PHDGN": PHDGN,
-    "SWAN": SWAN,
 }
 
 def convert_to_lit_dataset(data):
@@ -235,4 +225,3 @@ class LitGraphNN(L.LightningModule):
         params = ", ".join(f"{k}={v}" for k, v in self.hparams.items())
         return f"LitGraphNN({params})" + f" with underlying model: {str(self.model)}"
     
-

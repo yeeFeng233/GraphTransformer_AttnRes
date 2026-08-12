@@ -1,215 +1,182 @@
 <div align="center">
 
-# Can You Hear Me Now? A Benchmark for Long-Range Graph Propagation
+# Depth-Wise Attention Residuals for Long-Range Propagation in Graph Transformers
 
-[![Paper](https://img.shields.io/badge/Paper-OpenReview-red.svg)](https://openreview.net/forum?id=DgkWFPZMPp)
-[![Dataset](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Datasets-blue.svg)](https://huggingface.co/datasets/lucamiglior/echo-benchmark)
+Official implementation of **AttnRes-GT**, including **GPS+AttnRes** and
+**GRIT+AttnRes**, evaluated on the full **ECHO benchmark**.
 
-*Published at the International Conference on Learning Representations (ICLR) 2026*
+[ECHO paper](https://openreview.net/forum?id=DgkWFPZMPp) |
+[ECHO dataset](https://huggingface.co/datasets/lucamiglior/echo-benchmark)
 
 </div>
 
-
-
 ## Overview
 
-**ECHO** is a novel benchmark designed to rigorously test the long-range information propagation capabilities of Graph Neural Networks (GNNs). While current benchmarks often focus on local interactions, ECHO introduces both synthetic and real-world tasks where successful prediction requires traversing up to **40 hops** in a graph.
+Graph Transformers improve spatial communication across nodes, but information
+acquired at an early depth must still remain accessible through subsequent
+computation. AttnRes-GT complements spatial graph propagation with depth-wise
+residual routing over the causal contribution history of each node.
 
-## Leaderboards
+For every Graph Transformer layer, the implementation:
 
-(last update Dec 23rd 2025)
+1. routes the available history before graph propagation;
+2. appends the graph-propagation contribution;
+3. routes the updated history before the FFN;
+4. appends the FFN contribution.
 
-### ECHO-Synth
+A final AttnRes operator routes the complete history to the unchanged task
+readout. The GPS and GRIT graph-propagation operators themselves are retained.
+`attnres_block_size=1` selects Full AttnRes; larger values sum consecutive
+sublayer contributions into blocks before depth-wise routing.
 
-<details>
-<summary> <b>Diameter</b> (Graph Regression) </summary>
+## Repository Scope
 
-Model | MAE (Mean ± Std) | Reference| Contact | Date | 
-| :--- | :---: | --- | --- | --- |
-| A-DGN    | 1.151 ± 0.038      | [Gravina et al, ICLR 2023](https://openreview.net/forum?id=J3Y7cgZOOS) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| DRew     | 1.243 ± 0.047      | [Gutteridge et al, ICML 2023](https://proceedings.mlr.press/v202/gutteridge23a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCN      | 3.832 ± 0.262      | [Kipf et al, ICLR 2017](https://openreview.net/forum?id=SJU4ayYgl) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCNII    | 2.005 ± 0.093      | [Chen et al, ICML 2020](https://proceedings.mlr.press/v119/chen20v.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GIN      | 1.630 ± 0.161      | [Xu et al, ICLR 2019](https://openreview.net/forum?id=ryGs6iA5Km) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GPS      | 2.160 ± 0.098      | [Rampášek et al, NeurIPS 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/5d4834a159f1547b267a05a4e2b7cf5e-Abstract-Conference.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GraphCON | 2.969 ± 0.189      | [Rusch et al, ICML 2022](https://proceedings.mlr.press/v162/rusch22a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GRIT     | **1.014** ± 0.046  | [Ma et al, ICML 2023](https://proceedings.mlr.press/v202/ma23c.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| PH-DGN   | 1.627 ± 0.398      | [Heilig et al, ICLR 2025](https://openreview.net/forum?id=03EkqSCKuO) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| SWAN     | 1.121 ± 0.070      | [Gravina et al, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/33858) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-</details>
+This public release contains the code needed for the paper's main experiments:
 
-<details>
-<summary> <b>Eccentricity</b> (Node Regression) </summary>
-
-Model | MAE (Mean ± Std) | Reference| Contact | Date | 
-| :--- | :---: | --- | --- | --- |
-| A-DGN     | 4.981 ± 0.037     | [Gravina et al, ICLR 2023](https://openreview.net/forum?id=J3Y7cgZOOS) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| DRew      | **4.651** ± 0.020 | [Gutteridge et al, ICML 2023](https://proceedings.mlr.press/v202/gutteridge23a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GCN       | 5.233 ± 0.034     | [Kipf et al, ICLR 2017](https://openreview.net/forum?id=SJU4ayYgl) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCNII     | 5.241 ± 0.030     | [Chen et al, ICML 2020](https://proceedings.mlr.press/v119/chen20v.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GIN       | 4.869 ± 0.092     | [Xu et al, ICLR 2019](https://openreview.net/forum?id=ryGs6iA5Km) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GPS       | 4.758 ± 0.021     | [Rampášek et al, NeurIPS 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/5d4834a159f1547b267a05a4e2b7cf5e-Abstract-Conference.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GraphCON  | 5.474 ± 0.001     | [Rusch et al, ICML 2022](https://proceedings.mlr.press/v162/rusch22a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GRIT      | 5.091 ± 0.158     | [Ma et al, ICML 2023](https://proceedings.mlr.press/v202/ma23c.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| PH-DGN    | 5.068 ± 0.126     | [Heilig et al, ICLR 2025](https://openreview.net/forum?id=03EkqSCKuO) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| SWAN      | 4.840 ± 0.045     | [Gravina et al, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/33858) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-</details>
-
-<details>
-<summary> <b>Single Source Shorthest Path</b> (Node Regression) </summary>
-
-Model | MAE (Mean ± Std) | Reference| Contact | Date | 
-| :--- | :---: | --- | --- | --- |
-| A-DGN     | 1.176 ± 0.140     | [Gravina et al, ICLR 2023](https://openreview.net/forum?id=J3Y7cgZOOS) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| DRew      | 1.279 ± 0.011     | [Gutteridge et al, ICML 2023](https://proceedings.mlr.press/v202/gutteridge23a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GCN       | 2.102 ± 0.094     | [Kipf et al, ICLR 2017](https://openreview.net/forum?id=SJU4ayYgl) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCNII     | 2.128 ± 0.429     | [Chen et al, ICML 2020](https://proceedings.mlr.press/v119/chen20v.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GIN       | 2.234 ± 0.271     | [Xu et al, ICLR 2019](https://openreview.net/forum?id=ryGs6iA5Km) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GPS       | 0.472 ± 0.050     | [Rampášek et al, NeurIPS 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/5d4834a159f1547b267a05a4e2b7cf5e-Abstract-Conference.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GraphCON  | 5.734 ± 0.011     | [Rusch et al, ICML 2022](https://proceedings.mlr.press/v162/rusch22a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GRIT      | **0.121** ± 0.013 | [Ma et al, ICML 2023](https://proceedings.mlr.press/v202/ma23c.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| PH-DGN    | 1.323 ± 0.485     | [Heilig et al, ICLR 2025](https://openreview.net/forum?id=03EkqSCKuO) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| SWAN      | 0.896 ± 0.232     | [Gravina et al, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/33858) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-</details>
-
-
-### ECHO-Chem
-
-<details>
-  <summary> <b>Energy</b> (Graph Regression) </summary>
-
-| Model | MAE (Mean ± Std) | Reference| Contact | Date | 
-| :--- | :---: | --- | --- | --- |
-| A-DGN     | 12.486 ± 1.621    | [Gravina et al, ICLR 2023](https://openreview.net/forum?id=J3Y7cgZOOS) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| DRew      | 11.325 ± 2.394    | [Gutteridge et al, ICML 2023](https://proceedings.mlr.press/v202/gutteridge23a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GCN       | 28.112 ± 1.239    | [Kipf et al, ICLR 2017](https://openreview.net/forum?id=SJU4ayYgl) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCNII     | 13.235 ± 2.630    | [Chen et al, ICML 2020](https://proceedings.mlr.press/v119/chen20v.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GIN       | 47.851 ± 10.154   | [Xu et al, ICLR 2019](https://openreview.net/forum?id=ryGs6iA5Km) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GINE      | 23.558 ± 7.568    | [Hu et al, ICLR 2020](https://openreview.net/forum?id=HJlWWJSFDH) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GPS       | **5.257** ± 0.842 | [Rampášek et al, NeurIPS 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/5d4834a159f1547b267a05a4e2b7cf5e-Abstract-Conference.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GraphCON  | 14.295 ± 0.807    | [Rusch et al, ICML 2022](https://proceedings.mlr.press/v162/rusch22a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GRIT      | 25.508 ± 2.507    | [Ma et al, ICML 2023](https://proceedings.mlr.press/v202/ma23c.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| PH-DGN    | 16.080 ± 1.123    | [Heilig et al, ICLR 2025](https://openreview.net/forum?id=03EkqSCKuO) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| SWAN      | 12.629 ± 1.157    | [Gravina et al, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/33858) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-</details>
-
-
-<details>
-  <summary> <b>Charge</b> (Node Regression) </summary>
-
-| Model | MAE (Mean ± Std) $\times 10^{-3}$ | Reference| Contact | Date | 
-| :--- | :---: | --- | --- | --- |
-| A-DGN     | 6.543 ± 0.146     | [Gravina et al, ICLR 2023](https://openreview.net/forum?id=J3Y7cgZOOS) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| DRew      | 9.086 ± 0.473     | [Gutteridge et al, ICML 2023](https://proceedings.mlr.press/v202/gutteridge23a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GCN       | 8.421 ± 0.512     | [Kipf et al, ICLR 2017](https://openreview.net/forum?id=SJU4ayYgl) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GCNII     | 8.829 ± 0.021     | [Chen et al, ICML 2020](https://proceedings.mlr.press/v119/chen20v.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GIN       | 10.784 ± 0.059    | [Xu et al, ICLR 2019](https://openreview.net/forum?id=ryGs6iA5Km) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GINE      | 7.176 ± 0.371     | [Hu et al, ICLR 2020](https://openreview.net/forum?id=HJlWWJSFDH) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 | 
-| GPS       | 6.182 ± 0.219     | [Rampášek et al, NeurIPS 2022](https://proceedings.neurips.cc/paper_files/paper/2022/hash/5d4834a159f1547b267a05a4e2b7cf5e-Abstract-Conference.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GRIT      | 7.134 ± 6.090     | [Rusch et al, ICML 2022](https://proceedings.mlr.press/v162/rusch22a.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| GraphCON  | 19.629 ± 0.195    | [Ma et al, ICML 2023](https://proceedings.mlr.press/v202/ma23c.html) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| PH-DGN    | 7.915 ± 0.269     | [Heilig et al, ICLR 2025](https://openreview.net/forum?id=03EkqSCKuO) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-| SWAN      | **6.109** ± 0.103 | [Gravina et al, AAAI 2025](https://ojs.aaai.org/index.php/AAAI/article/view/33858) |   [Luca Miglior - ECHO Team](mailto:luca.miglior@phd.unipi.it) | Dec 23, 2025 |
-</details>
-
----
-
-## 🚀 Getting Started
-
-### Installation
-
-We recommend using [uv](https://github.com/astral-sh/uv) for fast and reliable dependency management.
-
-```bash
-# Create a virtual environment
-uv init
-# Install dependencies
-uv sync
+```text
+models/                 AttnRes history, GPS+AttnRes, and GRIT+AttnRes
+scripts/                training, search, selection, and four-seed evaluation
+search-space/           GPS+AttnRes and GRIT+AttnRes search spaces for 5 tasks
+configs/                validation-selected configurations used in the paper
+tests/                  recurrence, source-contract, and forward smoke tests
+utils/                  ECHO dataset and Lightning utilities
 ```
 
-### Downloading Data
+Ablation studies, independently rerun backbones, raw datasets, checkpoints, and
+experiment logs are intentionally excluded from this repository.
 
-You can download the datasets using the provided script. This will automatically fetch the required files from Hugging Face.
+## Environment
+
+The experiments use Python 3.11, PyTorch, PyTorch Geometric, Lightning, Ray
+Tune, and Optuna. We recommend creating a clean environment and installing the
+server-exported dependency lock:
 
 ```bash
-# Download all tasks
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+PyTorch Geometric binary packages must match the installed PyTorch and CUDA
+versions. The wheel sources at the top of `requirements.txt` match the locked
+PyTorch 2.6.0 and CUDA 11.8 environment used for the experiments.
+
+To regenerate `requirements.txt` from the exact server environment before a
+release:
+
+```bash
+source /path/to/environment/bin/activate
+bash scripts/export_requirements.sh
+```
+
+## Data
+
+ECHO data are downloaded from the official Hugging Face repository and are not
+stored in Git:
+
+```bash
 python scripts/download-all.py
-
-# Or download specific tasks
-python scripts/download-all.py --task diam
-python scripts/download-all.py --task charge
 ```
 
----
+The five evaluated tasks are:
 
-## 📦 Datasets
+- ECHO-Synth: `diam`, `ecc`, and `sssp`;
+- ECHO-Chem: `energy` and `charge`.
 
-### 🧪 ECHO-Synth
-A synthetic dataset suite of **10,080 graphs** across six topologies: `line`, `ladder`, `grid-like`, `tree`, `caterpillar`, `lobster`.
+## Verification
 
-Tasks:
-- **Single-source shortest path (sssp)**
-- **Node eccentricity (ecc)**
-- **Graph diameter (diam)**
-
-Each task isolates different aspects of global graph property prediction.
-
-### 🧪 ECHO-Chem
-A **real-world molecular dataset** of **200k molecular graphs**.
-
-Tasks:
-- **Atomic partial charges (charge)**: Node-level regression requiring long-range atomic interaction modeling.
-- **Energy (energy)**: Graph-level regression task.
-
----
-
-## 💻 Usage
-
-### 📓 Notebooks (Recommended)
-For ease of use, we provide Jupyter notebooks to guide you through training and inference:
-
-- **`notebooks/train-model.ipynb`**: Step-by-step guide to training a model on ECHO tasks.
-- **`notebooks/make-predictions.ipynb`**: Load a trained checkpoint and generate predictions.
-
-### 🧠 Training from CLI
-You can also train models directly using the command line script:
+Run these checks before starting an experiment:
 
 ```bash
-python scripts/train.py \
-    --task diam \
-    --gnn_type GNN \
-    --conv_layer GCNConv \
-    --hidden_dim 128 \
-    --num_layers 8 \
-    --lr 0.001 \
-    --batch_size 512
+python tests/test_model_source_contract.py
+python tests/test_attnres_history.py
+python tests/smoke_models.py
 ```
 
-### 🔎 Hyperparameter Search
-To run a hyperparameter search (using Ray Tune and Optuna):
+The latter two tests require PyTorch and PyTorch Geometric.
+
+## Reproduce Selected Configurations
+
+The exact validation-selected configurations are stored in
+`configs/best_attnres.csv`. The following command launches seeds 1--4, assigns
+one seed to each listed GPU, skips complete existing results, and writes the
+summary to `results/multiseed/summary.csv`:
 
 ```bash
-# Run search for diameter task
-python scripts/search.py --tasks diam --n_samples 32
-
-# Or use the helper script
-bash scripts/run_search.sh
+DETACH=1 \
+BEST_CONFIGS="configs/best_attnres.csv" \
+SEEDS="1 2 3 4" \
+GPU_IDS="0 1 2 3" \
+bash scripts/run_attnres_multiseed.sh
 ```
 
----
+To run only selected model/task rows, create a filtered copy of the CSV and
+pass it through `BEST_CONFIGS`.
 
+## Hyperparameter Search
 
-## 📚 Citation
+Search evaluates validation data only. Test metrics are produced after
+configuration selection by the fixed four-seed stage.
 
-If you use ECHO in your research, please cite our paper:
+```bash
+TASKS="diam ecc sssp charge energy" \
+MODELS="gps_attnres grit_attnres" \
+NUM_GPUS=4 \
+N_SAMPLES=24 \
+AUTO_MULTI_SEED=1 \
+FINAL_SEEDS="1 2 3 4" \
+FINAL_GPU_IDS="0 1 2 3" \
+DETACH=1 \
+bash scripts/run_attnres_search.sh
+```
+
+The launcher writes search CSVs and logs under `results/search/`, selects each
+configuration by validation MAE, and then runs the four fixed seeds. Ray uses
+the short temporary path `/tmp/ar_$UID` by default to avoid Unix socket path
+limits.
+
+## Selected Hyperparameters
+
+All models use the ECHO splits and validation-MAE checkpoint selection. GPS
+uses multi-head global attention; GRIT uses ReLU. `b` denotes AttnRes block
+size.
+
+| Model | Task | Layers | Hidden | Batch | b | LR | Weight decay | Dropout | Heads | Attn. dropout |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| GPS+AttnRes | diam | 29 | 96 | 256 | 2 | 7.841e-5 | 7.879e-5 | 0.00 | 4 | 0.08 |
+| GPS+AttnRes | ecc | 19 | 162 | 256 | 2 | 2.859e-4 | 1.275e-4 | 0.00 | 2 | 0.05 |
+| GPS+AttnRes | sssp | 28 | 56 | 256 | 4 | 1.307e-4 | 1.518e-4 | 0.00 | 2 | 0.03 |
+| GPS+AttnRes | energy | 26 | 192 | 256 | 2 | 5.860e-5 | 3.196e-4 | 0.00 | 4 | 0.08 |
+| GPS+AttnRes | charge | 24 | 160 | 256 | 2 | 5.640e-5 | 3.930e-5 | 0.00 | 8 | 0.15 |
+| GRIT+AttnRes | diam | 40 | 256 | 128 | 8 | 4.780e-4 | 1.254e-4 | 0.05 | 2 | 0.20 |
+| GRIT+AttnRes | ecc | 40 | 256 | 128 | 8 | 2.364e-4 | 1.040e-6 | 0.03 | 2 | 0.02 |
+| GRIT+AttnRes | sssp | 48 | 96 | 160 | 4 | 2.800e-4 | 1.500e-4 | 0.05 | 8 | 0.00 |
+| GRIT+AttnRes | energy | 12 | 64 | 256 | 2 | 7.180e-4 | 9.400e-4 | 0.00 | 4 | 0.17 |
+| GRIT+AttnRes | charge | 40 | 128 | 256 | 8 | 3.400e-4 | 3.300e-4 | 0.05 | 2 | 0.20 |
+
+## Result Safety
+
+- Hyperparameters and checkpoints are selected using validation MAE only.
+- The test split is excluded from search, early stopping, and checkpoint
+  selection.
+- Final results use seeds `1, 2, 3, 4` and report test MAE mean and population
+  standard deviation.
+- Raw logs are written below `results/` and are never tracked by Git.
+
+## Acknowledgment
+
+This repository builds on the official ECHO benchmark implementation. Please
+cite ECHO when using its datasets or evaluation protocol:
 
 ```bibtex
-@article{echobenchmark,
-    title={{Can You Hear Me Now? A Benchmark for Long-Range Graph Propagation}}, 
-    author={Luca Miglior and Matteo Tolloso and Alessio Gravina and Davide Bacciu},
-    booktitle={The Fourteenth International Conference on Learning Representations},
-    year={2026},
-    url={https://openreview.net/forum?id=DgkWFPZMPp}
+@inproceedings{echobenchmark,
+  title     = {Can You Hear Me Now? A Benchmark for Long-Range Graph Propagation},
+  author    = {Luca Miglior and Matteo Tolloso and Alessio Gravina and Davide Bacciu},
+  booktitle = {The Fourteenth International Conference on Learning Representations},
+  year      = {2026},
+  url       = {https://openreview.net/forum?id=DgkWFPZMPp}
 }
 ```
 
+The AttnRes-GT paper citation will be added after publication.

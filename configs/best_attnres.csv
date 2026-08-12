@@ -1,0 +1,11 @@
+task,conv_layer,num_layers,hidden_dim,batch_size,lr,weight_decay,dropout_prob,attnres_block_size,gps_num_heads,gps_attn_dropout,gps_attn_type,grit_num_heads,grit_attn_dropout,grit_act,selection_metric
+diam,GPSAttnRes,29,96,256,7.840965987764135e-05,7.879323923319832e-05,0.0,2,4,0.08,multihead,,,,val_mae
+ecc,GPSAttnRes,19,162,256,0.0002858931433993494,0.00012746892055080834,0.0,2,2,0.05,multihead,,,,val_mae
+sssp,GPSAttnRes,28,56,256,0.00013065049783053974,0.00015177102696704444,0.0,4,2,0.03,multihead,,,,val_mae
+energy,GPSAttnRes,26,192,256,5.86e-05,0.00031964,0.0,2,4,0.08,multihead,,,,val_mae
+charge,GPSAttnRes,24,160,256,5.64e-05,3.93e-05,0.0,2,8,0.15,multihead,,,,val_mae
+diam,GRITAttnRes,40,256,128,0.0004779571271820275,0.0001253931561028404,0.05,8,,,,2,0.2,relu,val_mae
+ecc,GRITAttnRes,40,256,128,0.00023639049348515335,1.0400308754818064e-06,0.03,8,,,,2,0.02,relu,val_mae
+sssp,GRITAttnRes,48,96,160,0.00028,0.00015,0.05,4,,,,8,0.0,relu,val_mae
+energy,GRITAttnRes,12,64,256,0.000717957,0.00094,0.0,2,,,,4,0.17,relu,val_mae
+charge,GRITAttnRes,40,128,256,0.00034,0.00033,0.05,8,,,,2,0.2,relu,val_mae
