@@ -17,39 +17,21 @@ acquired at an early depth must still remain accessible through subsequent
 computation. AttnRes-GT complements spatial graph propagation with depth-wise
 residual routing over the causal contribution history of each node.
 
-For every Graph Transformer layer, the implementation:
-
-1. routes the available history before graph propagation;
-2. appends the graph-propagation contribution;
-3. routes the updated history before the FFN;
-4. appends the FFN contribution.
-
+Within every Graph Transformer layer, AttnRes-GT routes the available history
+before graph propagation, appends the resulting graph-propagation contribution,
+routes the updated history before the FFN, and then appends the FFN contribution.
 A final AttnRes operator routes the complete history to the unchanged task
-readout. The GPS and GRIT graph-propagation operators themselves are retained.
-`attnres_block_size=1` selects Full AttnRes; larger values sum consecutive
+readout. The graph-propagation operators of GPS and GRIT remain unchanged.
+
+`attnres_block_size=1` selects Full AttnRes. Larger values sum consecutive
 sublayer contributions into blocks before depth-wise routing.
 
-## Repository Scope
+## Getting Started
 
-This public release contains the code needed for the paper's main experiments:
+### Environment
 
-```text
-models/                 AttnRes history, GPS+AttnRes, and GRIT+AttnRes
-scripts/                training, search, selection, and four-seed evaluation
-search-space/           GPS+AttnRes and GRIT+AttnRes search spaces for 5 tasks
-configs/                validation-selected configurations used in the paper
-tests/                  recurrence, source-contract, and forward smoke tests
-utils/                  ECHO dataset and Lightning utilities
-```
-
-Ablation studies, independently rerun backbones, raw datasets, checkpoints, and
-experiment logs are intentionally excluded from this repository.
-
-## Environment
-
-The experiments use Python 3.11, PyTorch, PyTorch Geometric, Lightning, Ray
-Tune, and Optuna. We recommend creating a clean environment and installing the
-server-exported dependency lock:
+The experiments use Python 3.11, PyTorch 2.6.0, CUDA 11.8, PyTorch Geometric,
+Lightning, Ray Tune, and Optuna. We recommend using a clean environment:
 
 ```bash
 python3.11 -m venv .venv
@@ -58,35 +40,8 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-PyTorch Geometric binary packages must match the installed PyTorch and CUDA
-versions. The wheel sources at the top of `requirements.txt` match the locked
-PyTorch 2.6.0 and CUDA 11.8 environment used for the experiments.
-
-To regenerate `requirements.txt` from the exact server environment before a
-release:
-
-```bash
-source /path/to/environment/bin/activate
-bash scripts/export_requirements.sh
-```
-
-## Data
-
-ECHO data are downloaded from the official Hugging Face repository and are not
-stored in Git:
-
-```bash
-python scripts/download-all.py
-```
-
-The five evaluated tasks are:
-
-- ECHO-Synth: `diam`, `ecc`, and `sssp`;
-- ECHO-Chem: `energy` and `charge`.
-
-## Verification
-
-Run these checks before starting an experiment:
+The binary package sources in `requirements.txt` match the PyTorch and CUDA
+versions used in our experiments. Verify the installation before training:
 
 ```bash
 python tests/test_model_source_contract.py
@@ -94,53 +49,23 @@ python tests/test_attnres_history.py
 python tests/smoke_models.py
 ```
 
-The latter two tests require PyTorch and PyTorch Geometric.
+### Download Dataset
 
-## Reproduce Selected Configurations
-
-The exact validation-selected configurations are stored in
-`configs/best_attnres.csv`. The following command launches seeds 1--4, assigns
-one seed to each listed GPU, skips complete existing results, and writes the
-summary to `results/multiseed/summary.csv`:
+Download the ECHO benchmark from its official Hugging Face repository:
 
 ```bash
-DETACH=1 \
-BEST_CONFIGS="configs/best_attnres.csv" \
-SEEDS="1 2 3 4" \
-GPU_IDS="0 1 2 3" \
-bash scripts/run_attnres_multiseed.sh
+python scripts/download-all.py
 ```
 
-To run only selected model/task rows, create a filtered copy of the CSV and
-pass it through `BEST_CONFIGS`.
+The evaluated tasks are `diam`, `ecc`, and `sssp` from ECHO-Synth, and `energy`
+and `charge` from ECHO-Chem. Raw datasets are not stored in this repository.
 
-## Hyperparameter Search
+### Best Hyperparameters
 
-Search evaluates validation data only. Test metrics are produced after
-configuration selection by the fixed four-seed stage.
-
-```bash
-TASKS="diam ecc sssp charge energy" \
-MODELS="gps_attnres grit_attnres" \
-NUM_GPUS=4 \
-N_SAMPLES=24 \
-AUTO_MULTI_SEED=1 \
-FINAL_SEEDS="1 2 3 4" \
-FINAL_GPU_IDS="0 1 2 3" \
-DETACH=1 \
-bash scripts/run_attnres_search.sh
-```
-
-The launcher writes search CSVs and logs under `results/search/`, selects each
-configuration by validation MAE, and then runs the four fixed seeds. Ray uses
-the short temporary path `/tmp/ar_$UID` by default to avoid Unix socket path
-limits.
-
-## Selected Hyperparameters
-
-All models use the ECHO splits and validation-MAE checkpoint selection. GPS
-uses multi-head global attention; GRIT uses ReLU. `b` denotes AttnRes block
-size.
+The machine-readable configurations are provided in
+[`configs/best_attnres.csv`](configs/best_attnres.csv). All configurations were
+selected by validation MAE. GPS uses multi-head global attention, GRIT uses
+ReLU, and `b` denotes the AttnRes block size.
 
 | Model | Task | Layers | Hidden | Batch | b | LR | Weight decay | Dropout | Heads | Attn. dropout |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -155,19 +80,46 @@ size.
 | GRIT+AttnRes | energy | 12 | 64 | 256 | 2 | 7.180e-4 | 9.400e-4 | 0.00 | 4 | 0.17 |
 | GRIT+AttnRes | charge | 40 | 128 | 256 | 8 | 3.400e-4 | 3.300e-4 | 0.05 | 2 | 0.20 |
 
-## Result Safety
+### Train
 
-- Hyperparameters and checkpoints are selected using validation MAE only.
-- The test split is excluded from search, early stopping, and checkpoint
-  selection.
-- Final results use seeds `1, 2, 3, 4` and report test MAE mean and population
-  standard deviation.
-- Raw logs are written below `results/` and are never tracked by Git.
+To reproduce the selected configurations with seeds `1, 2, 3, 4` on four
+GPUs, run:
 
-## Acknowledgment
+```bash
+DETACH=1 \
+BEST_CONFIGS="configs/best_attnres.csv" \
+SEEDS="1 2 3 4" \
+GPU_IDS="0 1 2 3" \
+bash scripts/run_attnres_multiseed.sh
+```
 
-This repository builds on the official ECHO benchmark implementation. Please
-cite ECHO when using its datasets or evaluation protocol:
+The summary is written to `results/multiseed/summary.csv`. Existing completed
+runs are skipped, and raw logs remain under `results/` without being tracked by
+Git.
+
+To repeat hyperparameter search and automatically evaluate each selected
+configuration with the same four seeds, run:
+
+```bash
+TASKS="diam ecc sssp charge energy" \
+MODELS="gps_attnres grit_attnres" \
+NUM_GPUS=4 \
+N_SAMPLES=24 \
+AUTO_MULTI_SEED=1 \
+FINAL_SEEDS="1 2 3 4" \
+FINAL_GPU_IDS="0 1 2 3" \
+DETACH=1 \
+bash scripts/run_attnres_search.sh
+```
+
+Search, early stopping, and checkpoint selection use validation MAE only; the
+test split is evaluated after configuration selection. Final results report the
+mean and population standard deviation of test MAE over the four seeds.
+
+## Citation
+
+The AttnRes-GT citation will be added after publication. This implementation
+uses the ECHO benchmark datasets and evaluation protocol; please also cite:
 
 ```bibtex
 @inproceedings{echobenchmark,
@@ -178,5 +130,3 @@ cite ECHO when using its datasets or evaluation protocol:
   url       = {https://openreview.net/forum?id=DgkWFPZMPp}
 }
 ```
-
-The AttnRes-GT paper citation will be added after publication.
